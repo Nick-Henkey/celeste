@@ -1,7 +1,4 @@
 #![feature(let_chains)]
-#![feature(arc_unwrap_or_clone)]
-#![feature(panic_info_message)]
-#![feature(async_closure)]
 #![feature(trait_alias)]
 #![feature(exit_status_error)]
 
