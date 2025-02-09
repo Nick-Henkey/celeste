@@ -45,7 +45,7 @@ pub fn get_remote<T: ToString>(remote: T) -> Option<Remote> {
         Some("pcloud") => Some(Remote::PCloud(PCloudRemote {
             remote_name: remote,
             client_id: config.get("client_id").cloned().unwrap_or_default(),
-            lient_secret: config.get("client_secret").cloned().unwrap_or_default(),
+            client_secret: config.get("client_secret").cloned().unwrap_or_default(),
         })),
         Some("protondrive") => Some(Remote::ProtonDrive(ProtonDriveRemote {
             remote_name: remote,
