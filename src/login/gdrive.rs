@@ -184,7 +184,8 @@ impl GDriveConfig {
                         }
                     }
                 }
-            }));
+            }
+        }));
 
             // Get the URL rclone will use for authentication by reading the process' stderr.
             loop {
