@@ -265,20 +265,85 @@ impl GDriveConfig {
                     window.set_sensitive(true);
                     break;
                 // Otherwise if the command has finished, check if it returned a good exit code and then return it.
-                } else if let Ok(Some(exit_status)) = process.try_wait() {
-                    handle.abort();
-                    dialog.close();
+                } else if let Err(e) = process.try_wait() {
+                    eprintln!("Error waiting for process: {}", e);
 
-                    if !exit_status.success() {
-                        gtk_util::show_codeblock_error(&tr::tr!("There was an issue authenticating to {}", auth_type), &process_stderr.lock().unwrap());
-                        window.set_sensitive(true);
-                        break;
-                    } 
-                    else if let Err(e) = process.try_wait() {
-                        eprintln!("Error waiting for process: {}", e);
-                        // Handle the error appropriately, e.g., show a message to the user
-                        window.set_sensitive(true); // Re-enable the window
-                        break;
+                // Backoff and retry logic
+                    let mut retry_count = 0;
+                    let max_retries = 3; // Example: Retry 3 times
+                        while retry_count < max_retries {
+                            retry_count += 1;
+                            let backoff_duration = Duration::from_secs(30);
+                            println!("Retrying in {} seconds (attempt {}/{})", backoff_duration.as_secs(), retry_count, max_retries);
+                            thread::sleep(backoff_duration);
+                            
+                            // Attempt to restart the rclone process
+                            match Command::new("rclone").args(&args).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
+                                Ok(new_process) => {
+                                    println!("rclone process restarted successfully.");
+                                    process = new_process; // Update the process handle
+                                    process_stdout = Arc::new(Mutex::new(String::new())); // reset stdout
+                                    process_stderr = Arc::new(Mutex::new(String::new())); // reset stderr
+                                    stdout_handle = process.stdout.take().unwrap(); // reset stdout handle
+                                    stderr_handle = process.stderr.take().unwrap(); // reset stderr handle
+                                    
+                                    //restart threads
+                                    let _stdout_thread = thread::spawn(glib::clone!(@strong process_stdout => move || {
+                                        let reader = BufReader::new(stdout_handle);
+                                        for line_result in reader.lines() { // Iterate over Result<String>
+                                            let string = match line_result {
+                                                Ok(s) => s,
+                                                Err(e) => {
+                                                    eprintln!("Error reading line from stdout: {}", e);
+                                                    break; // Or handle as appropriate
+                                                    }
+                                            };
+                                            match process_stdout.lock() {
+                                                Ok(mut guard) => {
+                                                    guard.push_str(&string);
+                                                    guard.push('\n');
+                                                }
+                                                Err(e) => {
+                                                    eprintln!("Error locking stdout mutex: {}", e);
+                                                    break; // Or handle as appropriate
+                                                }
+                                            }
+                                        }
+                                    }));
+                                    let _stderr_thread = thread::spawn(glib::clone!(@strong process_stderr => move || {
+                                        let reader = BufReader::new(stderr_handle);
+                                        for line_result in reader.lines() { // Iterate over Result<String>
+                                            let string = match line_result {
+                                                Ok(s) => s,
+                                                Err(e) => {
+                                                    eprintln!("Error reading line from stderr: {}", e);
+                                                    break; // Or handle as appropriate
+                                                }
+                                            };
+                                            match process_stderr.lock() {
+                                                Ok(mut guard) => {
+                                                    guard.push_str(&string);
+                                                    guard.push('\n');
+                                                }
+                                                Err(e) => {
+                                                    eprintln!("Error locking stderr mutex: {}", e);
+                                                    break; // Or handle as appropriate
+                                                }
+                                            }
+                                        }
+                                    }));
+                                    break; // Exit the retry loop if restart is successful
+                                }
+                                Err(restart_err) => {
+                                    eprintln!("Failed to restart rclone process: {}", restart_err);
+                                    if retry_count == max_retries {
+                                        eprintln!("Max retries reached. Giving up.");
+                                        window.set_sensitive(true);
+                                        return (Vec::new(), Button::new()); // Or handle the final failure as you see fit
+                                    }
+                                }
+                            }
+                        }
                     }
                     else {
                         let auth_token = {
