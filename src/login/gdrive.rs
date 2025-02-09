@@ -199,8 +199,8 @@ impl GDriveConfig {
                 // URL differently depending on the version we're using.
                 let process_output = format!(
                     "{}\n{}",
-                    process_stdout.lock().map_err(|e| e.into_inner()).unwrap_or_default(),
-                    process_stderr.lock().map_err(|e| e.into_inner()).unwrap_or_default(),
+                    process_stdout.lock().map_err(|e| e.into_inner()).unwrap_or_else(|_| String::new()),
+                    process_stderr.lock().map_err(|e| e.into_inner()).unwrap_or_else(|_| String::new()),
                 );
                 if let Some(line) = process_output.lines().find(|line| line.contains("http://127.0.0.1:53682/auth")) {
                  // The URL will be the last space-separated item on the line.
