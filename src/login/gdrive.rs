@@ -154,17 +154,35 @@ impl GDriveConfig {
             let _stdout_thread = thread::spawn(glib::clone!(@strong process_stdout => move || {
                 let reader = BufReader::new(stdout_handle);
                 for line in reader.lines() {
-                    let string = line.unwrap();
-                    process_stdout.lock().unwrap().push_str(&string);
-                    process_stdout.lock().unwrap().push('\n');
+                    let string = line.unwrap(); // Handle this Result as well (see point 5 below)
+                    match process_stdout.lock() {
+                        Ok(mut guard) => {
+                            guard.push_str(&string);
+                            guard.push('\n');
+                        }
+                        Err(e) => {
+                            eprintln!("Error locking stdout mutex: {}", e);
+                            // Handle the error appropriately, perhaps by exiting the thread
+                            break; // Or continue if you want to try to keep reading stdout
+                        }
+                    }
                 }
             }));
             let _stderr_thread = thread::spawn(glib::clone!(@strong process_stderr => move || {
                 let reader = BufReader::new(stderr_handle);
                 for line in reader.lines() {
-                    let string = line.unwrap();
-                    process_stderr.lock().unwrap().push_str(&string);
-                    process_stderr.lock().unwrap().push('\n');
+                    let string = line.unwrap(); // Handle this Result as well (see point 5 below)
+                    match process_stderr.lock() {
+                        Ok(mut guard) => {
+                            guard.push_str(&string);
+                            guard.push('\n');
+                        }
+                        Err(e) => {
+                            eprintln!("Error locking stderr mutex: {}", e);
+                            // Handle the error appropriately
+                            break;
+                        }
+                    }
                 }
             }));
 
@@ -181,8 +199,8 @@ impl GDriveConfig {
                 // URL differently depending on the version we're using.
                 let process_output = format!(
                     "{}\n{}",
-                    process_stdout.lock().unwrap(),
-                    process_stderr.lock().unwrap(),
+                    process_stdout.lock().map_err(|e| e.into_inner()).unwrap_or_default(),
+                    process_stderr.lock().map_err(|e| e.into_inner()).unwrap_or_default(),
                 );
                 if let Some(line) = process_output.lines().find(|line| line.contains("http://127.0.0.1:53682/auth")) {
                  // The URL will be the last space-separated item on the line.
@@ -240,7 +258,7 @@ impl GDriveConfig {
                     window.set_sensitive(true);
                     break;
                 // Otherwise if the command has finished, check if it returned a good exit code and then return it.
-                } else if let Some(exit_status) = process.try_wait().unwrap() {
+                } else if let Ok(Some(exit_status)) = process.try_wait() {
                     handle.abort();
                     dialog.close();
 
@@ -248,7 +266,13 @@ impl GDriveConfig {
                         gtk_util::show_codeblock_error(&tr::tr!("There was an issue authenticating to {}", auth_type), &process_stderr.lock().unwrap());
                         window.set_sensitive(true);
                         break;
-                    } else {
+                    } 
+                    else if let Err(e) = process.try_wait() {
+                        eprintln!("Error waiting for process: {}", e);
+                        // Handle the error appropriately, e.g., show a message to the user
+                        window.set_sensitive(true); // Re-enable the window
+                        break;
+                    else {
                         let auth_token = {
                             let lines: Vec<String> = process_stdout.lock().unwrap().lines().map(|string| string.to_owned()).collect();
                             lines.get(lines.len() - 2).unwrap().to_owned()
