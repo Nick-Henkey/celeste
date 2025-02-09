@@ -197,11 +197,18 @@ impl GDriveConfig {
                 //
                 // We check on both stdout and stderr, as rclone seems to report the authentication
                 // URL differently depending on the version we're using.
-                let process_output = format!(
-                    "{}\n{}",
-                    process_stdout.lock().map_err(|e| e.into_inner()).unwrap_or_else(|_| String::new()),
-                    process_stderr.lock().map_err(|e| e.into_inner()).unwrap_or_else(|_| String::new()),
-                );
+                let stdout_string = process_stdout.lock().map(|guard| guard.to_string()).unwrap_or_else(|poisoned| {
+                    eprintln!("Stdout mutex poisoned: {}", poisoned);
+                    poisoned.into_inner() // Or String::new()
+                });
+
+                let stderr_string = process_stderr.lock().map(|guard| guard.to_string()).unwrap_or_else(|poisoned| {
+                    eprintln!("Stderr mutex poisoned: {}", poisoned);
+                    poisoned.into_inner() // Or String::new()
+                });
+
+                let process_output = format!("{}\n{}", stdout_string, stderr_string);
+
                 if let Some(line) = process_output.lines().find(|line| line.contains("http://127.0.0.1:53682/auth")) {
                  // The URL will be the last space-separated item on the line.
                     *STATE_URL.lock().unwrap() = line.split_whitespace().last().unwrap().to_owned();
