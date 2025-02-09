@@ -199,12 +199,12 @@ impl GDriveConfig {
                 // URL differently depending on the version we're using.
                 let stdout_string = process_stdout.lock().map(|guard| guard.to_string()).unwrap_or_else(|poisoned| {
                     eprintln!("Stdout mutex poisoned: {}", poisoned);
-                    poisoned.into_inner() // Or String::new()
+                    poisoned.into_inner().to_string()
                 });
 
                 let stderr_string = process_stderr.lock().map(|guard| guard.to_string()).unwrap_or_else(|poisoned| {
                     eprintln!("Stderr mutex poisoned: {}", poisoned);
-                    poisoned.into_inner() // Or String::new()
+                    poisoned.into_inner().to_string()
                 });
 
                 let process_output = format!("{}\n{}", stdout_string, stderr_string);
