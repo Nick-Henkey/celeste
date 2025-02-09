@@ -272,6 +272,7 @@ impl GDriveConfig {
                         // Handle the error appropriately, e.g., show a message to the user
                         window.set_sensitive(true); // Re-enable the window
                         break;
+                    }
                     else {
                         let auth_token = {
                             let lines: Vec<String> = process_stdout.lock().unwrap().lines().map(|string| string.to_owned()).collect();
