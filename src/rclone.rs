@@ -10,50 +10,74 @@ use time::OffsetDateTime;
 pub fn get_remote<T: ToString>(remote: T) -> Option<Remote> {
     let remote = remote.to_string();
 
-    let config_str = util::run_in_background(
+    let config_str_result = util::run_in_background(
         glib::clone!(@strong remote => move || librclone::rpc("config/get", json!({
             "name": remote
-        }).to_string()).unwrap()),
+        }).to_string())),
     );
-    let config: HashMap<String, String> = serde_json::from_str(&config_str).unwrap();
+    let config_str = match config_str_result {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error getting config string: {}", e);
+            return None;
+        }
+    };
 
-    match config["type"].as_str() {
-        "dropbox" => Some(Remote::Dropbox(DropboxRemote {
+    let config_result: Result<HashMap<String, String>, serde_json::Error> = serde_json::from_str(&config_str);
+    let config = match config_result {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error parsing config: {}", e);
+            return None;
+        }
+    };
+    match config.get("type").map(|s| s.as_str()) {
+        Some("dropbox") => Some(Remote::Dropbox(DropboxRemote {
             remote_name: remote,
-            client_id: config["client_id"].clone(),
-            client_secret: config["client_secret"].clone(),
+            client_id: config.get("client_id").cloned().unwrap_or_default(), 
+            client_secret: config.get("client_secret").cloned().unwrap_or_default(),
         })),
-        "drive" => Some(Remote::GDrive(GDriveRemote {
+        Some("drive") => Some(Remote::GDrive(GDriveRemote {
             remote_name: remote,
-            client_id: config["client_id"].clone(),
-            client_secret: config["client_secret"].clone(),
+            client_id: config.get("client_id").cloned().unwrap_or_default(),
+            client_secret: config.get("client_secret").cloned().unwrap_or_default(),
         })),
-        "pcloud" => Some(Remote::PCloud(PCloudRemote {
+        Some("pcloud") => Some(Remote::PCloud(PCloudRemote {
             remote_name: remote,
-            client_id: config["client_id"].clone(),
-            client_secret: config["client_secret"].clone(),
+            client_id: config.get("client_id").cloned().unwrap_or_default(),
+            lient_secret: config.get("client_secret").cloned().unwrap_or_default(),
         })),
-        "protondrive" => Some(Remote::ProtonDrive(ProtonDriveRemote {
+        Some("protondrive") => Some(Remote::ProtonDrive(ProtonDriveRemote {
             remote_name: remote,
-            username: config["username"].clone(),
+            username: config.get("username").cloned().unwrap_or_default(),
         })),
-        "webdav" => {
-            let vendor = match config["vendor"].as_str() {
-                "nextcloud" => WebDavVendors::Nextcloud,
-                "owncloud" => WebDavVendors::Owncloud,
-                "webdav" => WebDavVendors::WebDav,
-                _ => unreachable!(),
+        Some("webdav") => {
+            let vendor = match config.get("vendor").map(|s| s.as_str()) { // Safer access here too
+                Some("nextcloud") => WebDavVendors::Nextcloud,
+                Some("owncloud") => WebDavVendors::Owncloud,
+                Some("webdav") => WebDavVendors::WebDav,
+                _ => {
+                    eprintln!("Unknown WebDAV vendor for {}", remote);
+                    return None; // Handle the error!
+                }
             };
 
             Some(Remote::WebDav(WebDavRemote {
                 remote_name: remote,
-                user: config["user"].clone(),
-                pass: config["pass"].clone(),
-                url: config["user"].clone(),
+                user: config.get("user").cloned().unwrap_or_default(),
+                pass: config.get("pass").cloned().unwrap_or_default(),
+                url: config.get("url").cloned().unwrap_or_default(), // Corrected: Use config["url"]
                 vendor,
             }))
         }
-        _ => None,
+        None => {
+            eprintln!("Remote type not found for {}", remote);
+            return None;
+        }
+        Some(t) => { // Handle unknown type
+            eprintln!("Unknown remote type {} for {}", t, remote);
+            return None;
+        }
     }
 }
 
